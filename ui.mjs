@@ -128,6 +128,7 @@ const DEFAULTS = {
   wallDim: 0.42,
   wallSat: 1,
   wallBright: 1,
+  wallContrast: 1,
   wallOpacity: 1,
   wallParallax: 0,
   wallVignette: 0.55,
@@ -166,7 +167,8 @@ function sanitize(theme) {
   out.wallBlur = num(out.wallBlur, 0, 40, DEFAULTS.wallBlur)
   out.wallDim = num(out.wallDim, 0, 1, DEFAULTS.wallDim)
   out.wallSat = num(out.wallSat, 0, 2, DEFAULTS.wallSat)
-  out.wallBright = num(out.wallBright, 0.2, 1.6, DEFAULTS.wallBright)
+  out.wallBright = num(out.wallBright, 0.2, 4, DEFAULTS.wallBright)
+  out.wallContrast = num(out.wallContrast, 0.5, 2.5, DEFAULTS.wallContrast)
   out.wallOpacity = num(out.wallOpacity, 0, 1, DEFAULTS.wallOpacity)
   out.wallParallax = num(out.wallParallax, 0, 1, DEFAULTS.wallParallax)
   out.wallVignette = num(out.wallVignette, 0, 1, DEFAULTS.wallVignette)
@@ -277,17 +279,43 @@ function themeCss(t) {
     // position:fixed child (dock, console, drawer) along with it, which pushed
     // the dock off-screen at density != 1.
     '#root { background: transparent !important; zoom: ' + t.density + '; }',
+    // The app shell paints an opaque bg-deep surface over the whole viewport,
+    // which would hide #cc-wall completely. Tailwind ships these as literal
+    // utility classes, so match them by name. Declared first so the specific
+    // surfaces further down (titlebar, sidebars, home panel) still win.
+    '[class*=\'bg-v2-background-bg-deep\'] { background-color: transparent !important; }',
+    // Sticky session headers/banners paint bg-base as a full-width band. Keep
+    // them as a translucent, blurred strip instead of an opaque slab.
+    '[class*=\'bg-v2-background-bg-base\'].sticky, [class*=\'bg-v2-background-bg-base\'].absolute {',
+    '  background-color: ' + rgba(t.bg0, 0.55) + ' !important;',
+    '  backdrop-filter: blur(' + t.backdropBlur + 'px) saturate(130%);',
+    '}',
+    // Every shell view mounts a rounded 10px bg-base plate over the whole
+    // viewport: home-panel, the new-session canvas, and session-chat-panel.
+    // Only home-panel had a scrim rule, so the other two painted the wallpaper
+    // out completely. Match the shared plate shape instead of a data-slot the
+    // upstream templates don't provide on two of the three.
+    '[class*=\'bg-v2-background-bg-base\'][class*=\'rounded-[10px]\'] {',
+    '  background-color: ' + rgba(t.bg1, 0.34) + ' !important;',
+    '  backdrop-filter: blur(' + Math.round(t.backdropBlur * 0.4) + 'px) saturate(125%);',
+    '}',
     'pre, code, kbd { font-family: \'' + t.fontMono + '\', ui-monospace, monospace !important; }',
     'pre { font-size: ' + t.codeSize + 'px !important; }',
     'pre, [data-slot=\'home-panel\'] { border-radius: var(--cc-radius) !important; }',
+    // Keep the wallpaper readable: panels become a light scrim instead of an
+    // opaque slab, and the bottom fade stops painting over the image.
     '[data-slot=\'vertical-tabs-sidebar\'], [data-slot=\'sidebar-inbox\'],',
     '[data-slot=\'sidebar-header\'], [data-slot=\'home-panel\'] {',
-    '  background: ' + rgba(t.bg1, 0.72) + ' !important;',
-    '  backdrop-filter: blur(' + t.backdropBlur + 'px) saturate(130%);',
+    '  background: ' + rgba(t.bg1, 0.34) + ' !important;',
+    '  backdrop-filter: blur(' + Math.round(t.backdropBlur * 0.4) + 'px) saturate(125%);',
     '}',
     '[data-slot=\'tabs-trigger-wrapper\'], [data-slot=\'titlebar-v2\'] {',
-    '  background: ' + rgba(t.bg0, 0.78) + ' !important;',
-    '  backdrop-filter: blur(' + Math.round(t.backdropBlur * 0.9) + 'px);',
+    '  background: ' + rgba(t.bg0, 0.5) + ' !important;',
+    '  backdrop-filter: blur(' + Math.round(t.backdropBlur * 0.45) + 'px);',
+    '}',
+    '.bg-gradient-to-t.from-v2-background-bg-base {',
+    '  --tw-gradient-from: transparent !important;',
+    '  background-image: none !important;',
     '}',
     '[data-slot=\'tabs-trigger\'][aria-selected=\'true\'] {',
     '  box-shadow: inset 0 -2px 0 ' + a + ', 0 0 22px ' + rgba(a, 0.16) + ';',
@@ -335,7 +363,7 @@ function wallpaperCss(t) {
     '  background-size: ' + size + ';',
     '  background-position: ' + t.wallPos + ';',
     '  background-repeat: ' + repeat + ';',
-    '  filter: blur(' + t.wallBlur + 'px) saturate(' + t.wallSat + ') brightness(' + t.wallBright + ');',
+    '  filter: blur(' + t.wallBlur + 'px) saturate(' + t.wallSat + ') brightness(' + t.wallBright + ') contrast(' + t.wallContrast + ');',
     '  opacity: ' + t.wallOpacity + ';',
     '  transform: translate3d(0, 0, 0);',
     '  will-change: transform;',
@@ -370,39 +398,33 @@ const STRUCT_CSS = [
   '}',
   '.cc-btn:hover { background: var(--cc-accent); color: #140b1c; transform: translateY(-1px); }',
   '.cc-btn.active { background: var(--cc-accent); color: #140b1c; }',
-  '.cc-hud-mark { font-size: 13px; line-height: 1; }
-/* ---- "Thinking..." indicator (reasoning is batched upstream, so show progress) ---- */
-#cc-thinking {
-  position: fixed; z-index: 100019; left: 50%; bottom: 84px;
-  transform: translateX(-50%) translateY(6px);
-  display: flex; align-items: center; gap: 9px;
-  padding: 8px 15px 8px 13px; border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(14,9,20,0.86); color: var(--cc-accent, #ff6f9f);
-  font-family: var(--v2-font-family-sans, system-ui); font-size: 13px; font-weight: 500;
-  letter-spacing: .01em; backdrop-filter: blur(14px);
-  box-shadow: 0 6px 24px rgba(0,0,0,.35);
-  opacity: 0; pointer-events: none;
-  transition: opacity .28s ease, transform .28s ease;
-}
-#cc-thinking.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-#cc-thinking .cc-think-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--cc-accent, #ff6f9f);
-  box-shadow: 0 0 0 0 var(--cc-accent, #ff6f9f);
-  animation: cc-think-pulse 1.1s ease-out infinite;
-}
-@keyframes cc-think-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255,111,159,.55); }
-  70% { box-shadow: 0 0 0 8px rgba(255,111,159,0); }
-  100% { box-shadow: 0 0 0 0 rgba(255,111,159,0); }
-}
-#cc-thinking .cc-think-label { color: var(--v2-text-text-base, #e8e8ef); }',
-  '.cc-wordmark {',
-  '  display: inline-block; font-family: var(--v2-font-family-sans, system-ui);',
-  '  font-weight: 600; letter-spacing: -.02em; font-size: 1.5rem;',
-  '  color: currentColor; white-space: nowrap; line-height: 1.2;',
+  '.cc-hud-mark { font-size: 13px; line-height: 1; }',
+  '/* ---- "Thinking..." indicator (reasoning is batched upstream, so show progress) ---- */',
+  '#cc-thinking {',
+  '  position: fixed; z-index: 100019; left: 50%; bottom: 84px;',
+  '  transform: translateX(-50%) translateY(6px);',
+  '  display: flex; align-items: center; gap: 9px;',
+  '  padding: 8px 15px 8px 13px; border-radius: 999px;',
+  '  border: 1px solid rgba(255,255,255,0.14);',
+  '  background: rgba(14,9,20,0.86); color: var(--cc-accent, #ff6f9f);',
+  '  font-family: var(--v2-font-family-sans, system-ui); font-size: 13px; font-weight: 500;',
+  '  letter-spacing: .01em; backdrop-filter: blur(14px);',
+  '  box-shadow: 0 6px 24px rgba(0,0,0,.35);',
+  '  opacity: 0; pointer-events: none;',
+  '  transition: opacity .28s ease, transform .28s ease;',
   '}',
-  '[data-cc-branded] > svg { display: none !important; }',
+  '#cc-thinking.show { opacity: 1; transform: translateX(-50%) translateY(0); }',
+  '#cc-thinking .cc-think-dot {',
+  '  width: 7px; height: 7px; border-radius: 50%; background: var(--cc-accent, #ff6f9f);',
+  '  box-shadow: 0 0 0 0 var(--cc-accent, #ff6f9f);',
+  '  animation: cc-think-pulse 1.1s ease-out infinite;',
+  '}',
+  '@keyframes cc-think-pulse {',
+  '  0% { box-shadow: 0 0 0 0 rgba(255,111,159,.55); }',
+  '  70% { box-shadow: 0 0 0 8px rgba(255,111,159,0); }',
+  '  100% { box-shadow: 0 0 0 0 rgba(255,111,159,0); }',
+  '}',
+  '#cc-thinking .cc-think-label { color: var(--v2-text-text-base, #e8e8ef); }',
   '.cc-drawer {',
   '  position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 92vw;',
   '  z-index: 100050; display: flex; flex-direction: column;',
@@ -679,16 +701,30 @@ const UI_JS = String.raw`
       'body{font-family:"' + t.fontSans + '","Zen Kaku Gothic New",system-ui,sans-serif!important;',
       'letter-spacing:' + t.letterSpacing + 'em;}',
       '#root{background:transparent!important;zoom:' + t.density + ';}',
+      // Opaque app shell must be transparent so #cc-wall shows through.
+      "[class*='bg-v2-background-bg-deep']{background-color:transparent!important;}",
+      "[class*='bg-v2-background-bg-base'].sticky,[class*='bg-v2-background-bg-base'].absolute{",
+      'background-color:' + rgba(t.bg0, .55) + '!important;',
+      'backdrop-filter:blur(' + t.backdropBlur + 'px) saturate(130%);}',
+      // Every shell view mounts a rounded 10px bg-base plate over the whole
+      // viewport: home-panel, the new-session canvas, and session-chat-panel.
+      // Only home-panel had a scrim rule, so the other two painted the wallpaper
+      // out completely. Match the shared plate shape instead of a data-slot the
+      // upstream templates don't provide on two of the three.
+      "[class*='bg-v2-background-bg-base'][class*='rounded-[10px]']{",
+      'background-color:' + rgba(t.bg1, .34) + '!important;',
+      'backdrop-filter:blur(' + Math.round(t.backdropBlur * .4) + 'px) saturate(125%);}',
       'pre,code,kbd{font-family:"' + t.fontMono + '",ui-monospace,monospace!important;}',
       'pre{font-size:' + t.codeSize + 'px!important;}',
       'pre,[data-slot="home-panel"]{border-radius:var(--cc-radius)!important;}',
       '[data-slot="vertical-tabs-sidebar"],[data-slot="sidebar-inbox"],',
       '[data-slot="sidebar-header"],[data-slot="home-panel"]{',
-      'background:' + rgba(t.bg1, .72) + '!important;',
-      'backdrop-filter:blur(' + t.backdropBlur + 'px) saturate(130%);}',
+      'background:' + rgba(t.bg1, .34) + '!important;',
+      'backdrop-filter:blur(' + Math.round(t.backdropBlur * .4) + 'px) saturate(125%);}',
       '[data-slot="tabs-trigger-wrapper"],[data-slot="titlebar-v2"]{',
-      'background:' + rgba(t.bg0, .78) + '!important;',
-      'backdrop-filter:blur(' + Math.round(t.backdropBlur * .9) + 'px);}',
+      'background:' + rgba(t.bg0, .5) + '!important;',
+      'backdrop-filter:blur(' + Math.round(t.backdropBlur * .45) + 'px);}',
+      '.bg-gradient-to-t.from-v2-background-bg-base{--tw-gradient-from:transparent!important;background-image:none!important;}',
       '[data-slot="tabs-trigger"][aria-selected="true"]{',
       'box-shadow:inset 0 -2px 0 ' + a + ',0 0 22px ' + rgba(a, .16) + ';}',
       '::selection{background:' + rgba(a, .35) + '!important;color:#fff!important;}',
@@ -722,7 +758,7 @@ const UI_JS = String.raw`
       'background-image:' + (useImg ? 'url("' + img.replace(/"/g, '\\"') + '")' : grad) + ';',
       'background-size:' + size + ';background-position:' + t.wallPos + ';',
       'background-repeat:' + (useImg && t.wallTile ? 'repeat' : 'no-repeat') + ';',
-      'filter:blur(' + t.wallBlur + 'px) saturate(' + t.wallSat + ') brightness(' + t.wallBright + ');',
+      'filter:blur(' + t.wallBlur + 'px) saturate(' + t.wallSat + ') brightness(' + t.wallBright + ') contrast(' + t.wallContrast + ');',
       'opacity:' + t.wallOpacity + ';}',
       '#cc-wall-tint{position:fixed;inset:0;z-index:-2;pointer-events:none;',
       'display:' + (t.wallMode === 'none' ? 'none' : 'block') + ';',
@@ -819,29 +855,35 @@ const UI_JS = String.raw`
     swapWordmarks(node);
   }
 
-  // The product logo is an SVG wordmark (drawing the letters, not text), so no
-  // string replacement can reach it. Hide the glyph and paint the brand name as
-  // text in its place, keeping the original box so layout does not jump.
+  // The product name is drawn as a block-font SVG, which string replacement
+  // can never reach. Rather than draw a replacement word, clear the plate so
+  // the space stays but reads empty, keeping the wallpaper front and center.
+  function isWordmarkSvg(svg) {
+    var vb = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+    if (vb.length !== 4) return false;
+    var w = vb[2];
+    var h = vb[3];
+    // The name plate is wide and short (234x42). The square logo mark is
+    // 16x20 and must be kept, so match the plate by its aspect, not by the
+    // data-slot children (both icons and the plate carry logo-* slots).
+    return w >= 140 && h <= 64;
+  }
+
+  function blankWordmark(svg) {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    svg.setAttribute('data-cc-blank', '1');
+  }
+
   function swapWordmarks(root) {
-    var to = T.brandTo;
-    var scope = root.querySelectorAll ? root.querySelectorAll('[role="img"], svg') : [];
+    var scope = root.querySelectorAll
+      ? root.querySelectorAll('svg[viewBox], [role="img"]')
+      : [];
     for (var i = 0; i < scope.length; i++) {
       var el = scope[i];
-      if (el.hasAttribute('data-cc-branded')) continue;
-      var label = (el.getAttribute('aria-label') || el.getAttribute('data-cc-brand-src') || '') + '';
-      var isBrand = /opencode/i.test(label) || /server-connect-brand/.test(el.className || '');
-      if (!isBrand) continue;
       var svg = el.tagName.toLowerCase() === 'svg' ? el : el.querySelector('svg');
-      if (!svg) continue;
-      var holder = el.tagName.toLowerCase() === 'svg' ? el.parentElement : el;
-      if (!holder || holder.hasAttribute('data-cc-branded')) continue;
-      holder.setAttribute('data-cc-branded', '1');
-      svg.style.display = 'none';
-      var span = document.createElement('span');
-      span.className = 'cc-wordmark';
-      span.setAttribute('data-cc-noswap', '');
-      span.textContent = to;
-      holder.appendChild(span);
+      if (!svg || !isWordmarkSvg(svg)) continue;
+      if (svg.hasAttribute('data-cc-blank')) continue;
+      blankWordmark(svg);
     }
   }
   var swapTimer = null;
@@ -1404,7 +1446,8 @@ const UI_JS = String.raw`
     sWall.appendChild(f('wallVignette', 'vignette', 'range', { min: 0, max: 1, step: 0.02 }));
     sWall.appendChild(f('wallOpacity', 'opacity', 'range', { min: 0, max: 1, step: 0.02 }));
     sWall.appendChild(f('wallSat', 'saturation', 'range', { min: 0, max: 2, step: 0.05 }));
-    sWall.appendChild(f('wallBright', 'brightness', 'range', { min: 0.2, max: 1.6, step: 0.05 }));
+    sWall.appendChild(f('wallBright', 'brightness', 'range', { min: 0.2, max: 4, step: 0.05 }));
+    sWall.appendChild(f('wallContrast', 'contrast', 'range', { min: 0.5, max: 2.5, step: 0.05 }));
     sWall.appendChild(sw('wallTile', 'tile pattern'));
     var upWrap = document.createElement('div');
     upWrap.className = 'cc-field';
@@ -1785,23 +1828,39 @@ const UI_JS = String.raw`
 })();
 `
 
-const INIT_SCRIPT = 'window.__CC_THEME__=' + JSON.stringify(readTheme()).replace(/</g, '\\u003c')
-  + ';window.__CC_DEFAULTS__=' + JSON.stringify(DEFAULTS).replace(/</g, '\\u003c')
-  + ';window.__CC_THEMES__=' + JSON.stringify(THEMES).replace(/</g, '\\u003c') + ';'
+// Rebuilt per request: theme.json is hand-edited and written by the panel, so a
+// value captured at module load would be stale for every page load after boot.
+function buildInitScript(t) {
+  return 'window.__CC_THEME__=' + JSON.stringify(t).replace(/</g, '\\u003c')
+    + ';window.__CC_DEFAULTS__=' + JSON.stringify(DEFAULTS).replace(/</g, '\\u003c')
+    + ';window.__CC_THEMES__=' + JSON.stringify(THEMES).replace(/</g, '\\u003c') + ';'
+}
 
 const INLINE_SCRIPT_HASH = createHash('sha256').update(UI_JS).digest('base64')
-const INIT_HASH = createHash('sha256').update(INIT_SCRIPT).digest('base64')
 
-function patchCsp(csp) {
+function patchCsp(csp, initHash) {
   if (!csp) return csp
   return csp
-    .replace(/(script-src[^;]*)/, '$1 \'sha256-' + INLINE_SCRIPT_HASH + '\' \'sha256-' + INIT_HASH + '\'')
+    .replace(/(script-src[^;]*)/, '$1 \'sha256-' + INLINE_SCRIPT_HASH + '\' \'sha256-' + initHash + '\'')
     .replace(/(style-src[^;]*)/, '$1 https://fonts.googleapis.com')
     .replace(/(font-src[^;]*)/, '$1 https://fonts.googleapis.com https://fonts.gstatic.com')
 }
 
-function buildInjection() {
-  const t = readTheme()
+// First paint still ships the upstream brand in <title> and og:title; swap it in
+// the shell so the tab never reads the old name, even before the SPA boots.
+function brandShell(html, t) {
+  const from = t.brandFrom, to = t.brandTo
+  if (!from || !to || from === to) return html
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return html
+    .replace(new RegExp('(<title[^>]*>)([^<]*)(' + '</title>)', 'i'),
+      (m, a, text, c) => a + text.split(from).join(to) + c)
+    .replace(new RegExp('(<meta[^>]*content=")([^"]*' + esc(from) + '[^"]*)(")', 'gi'),
+      (m, a, text, c) => a + text.split(from).join(to) + c)
+}
+
+function buildInjection(t) {
+  const initScript = buildInitScript(t)
   const head = [
     '<link rel="preconnect" href="https://fonts.googleapis.com">',
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
@@ -1811,8 +1870,8 @@ function buildInjection() {
     '<style id="cc-struct">' + STRUCT_CSS + '</style>',
   ].join('')
   const body = UI_HTML
-  const scripts = '<script>' + INIT_SCRIPT + '</script><script>' + UI_JS + '</script>'
-  return { head, body, scripts }
+  const scripts = '<script>' + initScript + '</script><script>' + UI_JS + '</script>'
+  return { head, body, scripts, initHash: createHash('sha256').update(initScript).digest('base64') }
 }
 
 /* ------------------------------------------------------------------ serve */
@@ -2216,7 +2275,9 @@ const server = http.createServer(async (req, res) => {
     proxyRes.setEncoding('utf8')
     proxyRes.on('data', (c) => { body += c })
     proxyRes.on('end', () => {
-      const inj = buildInjection()
+      const theme = readTheme()
+      const inj = buildInjection(theme)
+      body = brandShell(body, theme)
       if (body.includes('</head>')) body = body.replace('</head>', inj.head + '</head>')
       else body = inj.head + body
       if (body.includes('</body>')) body = body.replace('</body>', inj.body + inj.scripts + '</body>')
@@ -2227,7 +2288,7 @@ const server = http.createServer(async (req, res) => {
       delete headers['content-encoding']
       headers['content-length'] = Buffer.byteLength(body)
       for (const k of Object.keys(headers)) {
-        if (k.toLowerCase() === 'content-security-policy') headers[k] = patchCsp(headers[k])
+        if (k.toLowerCase() === 'content-security-policy') headers[k] = patchCsp(headers[k], inj.initHash)
       }
       res.writeHead(proxyRes.statusCode || 200, headers)
       res.end(body)
