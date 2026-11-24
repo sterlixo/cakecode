@@ -342,7 +342,7 @@ function themeCss(t) {
     'html.cc-focus [data-slot=\'sidebar-header\'],',
     'html.cc-focus [data-slot=\'vertical-tabs-panel\'] { display: none !important; }',
     'html.cc-focus #root { padding-left: 4vw !important; padding-right: 4vw !important; }',
-    'html.cc-focus #cc-wall { opacity: 0.25 !important; }',
+    'html.cc-focus #cc-wall, html.cc-focus #cc-wall-video { opacity: 0.25 !important; }',
     'html.cc-reduce * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }',
     t.customCss || '',
   ].join('\n')
@@ -363,9 +363,12 @@ function wallpaperCss(t) {
   const repeat = useImg && t.wallTile ? 'repeat' : 'no-repeat'
   const filter = 'blur(' + t.wallBlur + 'px) saturate(' + t.wallSat + ') brightness(' + t.wallBright + ') contrast(' + t.wallContrast + ')'
   return [
+    // The still layer stays mounted in video mode: it is the poster and the
+    // fallback. A paused or not-yet-decoded <video> paints nothing, and hiding
+    // this layer in that state left the whole viewport on the body colour.
     '#cc-wall {',
     '  position: fixed; inset: -4%; z-index: -3; pointer-events: none;',
-    '  display: ' + (t.wallMode === 'none' || isVideo ? 'none' : 'block') + ';',
+    '  display: ' + (t.wallMode === 'none' ? 'none' : 'block') + ';',
     '  background-image: ' + bgImage + ';',
     '  background-size: ' + size + ';',
     '  background-position: ' + t.wallPos + ';',
@@ -378,6 +381,7 @@ function wallpaperCss(t) {
     // A live wallpaper is a real <video>: CSS backgrounds cannot decode video.
     // Same box, same filter, same z-index as the still layer so every theme
     // control (brightness, blur, vignette, parallax) keeps working unchanged.
+    // Later in the DOM at the same z-index, so it paints over the poster.
     '#cc-wall-video {',
     '  position: fixed; inset: -4%; z-index: -3; pointer-events: none;',
     '  display: ' + (isVideo ? 'block' : 'none') + ';',
@@ -763,6 +767,10 @@ const UI_JS = String.raw`
       'html.cc-focus [data-slot="sidebar-header"],',
       'html.cc-focus [data-slot="vertical-tabs-panel"]{display:none!important;}',
       'html.cc-focus #root{padding-left:4vw!important;padding-right:4vw!important;}',
+      // Focus mode dims the backdrop. This lived only in the server sheet, which
+      // the client replaces on boot, so the rule silently stopped applying the
+      // moment the drawer rebuilt anything.
+      'html.cc-focus #cc-wall,html.cc-focus #cc-wall-video{opacity:.25!important;}',
       'html.cc-reduce *{animation-duration:.001ms!important;transition-duration:.001ms!important;}',
     ];
     return lines.join('') + '\n' + (t.customCss || '');
@@ -780,7 +788,7 @@ const UI_JS = String.raw`
     var filter = 'blur(' + t.wallBlur + 'px) saturate(' + t.wallSat + ') brightness(' + t.wallBright + ') contrast(' + t.wallContrast + ')';
     return [
       '#cc-wall{position:fixed;inset:-4%;z-index:-3;pointer-events:none;',
-      'display:' + (t.wallMode === 'none' || isVideo ? 'none' : 'block') + ';',
+      'display:' + (t.wallMode === 'none' ? 'none' : 'block') + ';',
       'background-image:' + (useImg ? 'url("' + img.replace(/"/g, '\\"') + '")' : grad) + ';',
       'background-size:' + size + ';background-position:' + t.wallPos + ';',
       'background-repeat:' + (useImg && t.wallTile ? 'repeat' : 'no-repeat') + ';',
@@ -810,32 +818,90 @@ const UI_JS = String.raw`
     return el;
   }
 
+  // A paused <video> still paints its current frame, so the last decoded frame
+  // is a real, correctly graded still of the wallpaper. Capturing it lets the
+  // still layer carry the image whenever we are not playing, instead of falling
+  // back to a bare gradient. Same-origin, so the canvas is not tainted.
+  var posterCache = {};
+
+  function capturePoster(v) {
+    try {
+      // currentSrc is resolved to an absolute URL while T.wallUrl stays
+      // relative, so keying the cache off currentSrc made every lookup miss.
+      // ptr is the stable key the rest of the code uses.
+      var ptr = (T.wallMode === 'video' && T.wallUrl) ? T.wallUrl : '';
+      if (!ptr || posterCache[ptr] || !v.videoWidth) return;
+      var scale = Math.min(1, 1920 / v.videoWidth);
+      var c = document.createElement('canvas');
+      c.width = Math.round(v.videoWidth * scale);
+      c.height = Math.round(v.videoHeight * scale);
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      var url = c.toDataURL('image/jpeg', 0.82);
+      posterCache[ptr] = url;
+      syncPoster();
+    } catch (e) {}
+  }
+
+  // The poster is applied as an inline background-image, which outranks the
+  // stylesheet. It must be cleared the moment we leave video mode or the still
+  // layer would keep a stale frame from a previous wallpaper.
+  function syncPoster() {
+    var w = $('#cc-wall');
+    if (!w) return;
+    var src = (T.wallMode === 'video' && T.wallUrl) ? T.wallUrl : '';
+    var poster = src && posterCache[src];
+    if (!poster) { w.style.backgroundImage = ''; return; }
+    w.style.backgroundImage = 'url("' + poster + '")';
+    // Match the video's framing so the poster is not stretched differently.
+    w.style.backgroundSize = (T.wallFit === 'contain' ? 'contain' : T.wallFit === 'fill' ? '100% 100%' : 'cover');
+    w.style.backgroundPosition = T.wallPos;
+  }
+
   // The <video> layer is not CSS: it needs a src, a decode, and a play call.
   // Called from applyTheme so switching modes or picking a file just works.
   function applyWallVideo() {
     var v = $('#cc-wall-video');
     if (!v) return;
-    // A 1080p decode is real GPU work. Skip it when the user asked for reduced
-    // motion or the tab is in the background, and let the still layer show.
-    var want = (T.wallMode === 'video' && T.wallUrl && !T.reduceMotion && !document.hidden)
-      ? T.wallUrl : '';
-    if (!want) {
+    var src = (T.wallMode === 'video' && T.wallUrl) ? T.wallUrl : '';
+    if (!src) {
       if (!v.paused) v.pause();
-      if (!T.wallMode || T.wallMode !== 'video') {
-        if (v.getAttribute('src')) v.removeAttribute('src');
-        v.load();
-      }
+      if (v.getAttribute('src')) { v.removeAttribute('src'); v.load(); }
+      syncPoster();
       return;
     }
-    if (v.getAttribute('src') !== want) {
-      v.setAttribute('src', want);
+    // Always load the source, even when we will not play it. Setting src only
+    // inside the "should play" branch is what left a reduce-motion boot with no
+    // frame at all: the element stayed empty over a hidden still layer, so the
+    // whole viewport fell back to the body colour.
+    if (v.getAttribute('src') !== src) {
+      v.setAttribute('src', src);
       v.load();
+    }
+    syncPoster();
+    var shouldPlay = !T.reduceMotion && !document.hidden;
+    if (!shouldPlay) {
+      if (!v.paused) v.pause();
+      return;
     }
     // Muted autoplay is allowed without a gesture, but a rejected promise is
     // still possible (low power mode, energy saver); swallow it so the still
     // layer underneath stays the visible fallback.
     var p = v.play();
     if (p && p.catch) p.catch(function () {});
+  }
+
+  var wallVideoEl = $('#cc-wall-video');
+  if (wallVideoEl) {
+    wallVideoEl.addEventListener('loadeddata', function () {
+      capturePoster(wallVideoEl);
+      syncPoster();
+    });
+    // A codec the browser cannot decode should degrade to the still layer, not
+    // to an empty rectangle.
+    wallVideoEl.addEventListener('error', function () {
+      posterCache[T.wallUrl] = null;
+      syncPoster();
+    });
   }
 
   document.addEventListener('visibilitychange', function () { applyWallVideo(); });
