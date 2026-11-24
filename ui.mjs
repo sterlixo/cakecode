@@ -144,6 +144,10 @@ const DEFAULTS = {
   focus: false,
   compactSidebar: false,
   backdropBlur: 18,
+  // How much darkening sits between the wallpaper and the app content. Enough
+  // to hold text contrast over a bright photo, light enough to keep the image
+  // readable instead of muddy.
+  panelScrim: 0.20,
   // free-form
   customCss: '',
 }
@@ -174,6 +178,7 @@ function sanitize(theme) {
   out.wallVignette = num(out.wallVignette, 0, 1, DEFAULTS.wallVignette)
   out.petals = num(out.petals, 0, 3, DEFAULTS.petals)
   out.backdropBlur = num(out.backdropBlur, 0, 40, DEFAULTS.backdropBlur)
+  out.panelScrim = num(out.panelScrim, 0, 0.85, DEFAULTS.panelScrim)
   out.compactSidebar = !!out.compactSidebar
   out.reduceMotion = !!out.reduceMotion
   out.wallTile = !!out.wallTile
@@ -295,9 +300,11 @@ function themeCss(t) {
     // Only home-panel had a scrim rule, so the other two painted the wallpaper
     // out completely. Match the shared plate shape instead of a data-slot the
     // upstream templates don't provide on two of the three.
+    // No backdrop blur: the plate covers the whole viewport, so blurring behind
+    // it only smears the wallpaper into mush. Let the image stay sharp.
     '[class*=\'bg-v2-background-bg-base\'][class*=\'rounded-[10px]\'] {',
-    '  background-color: ' + rgba(t.bg1, 0.34) + ' !important;',
-    '  backdrop-filter: blur(' + Math.round(t.backdropBlur * 0.4) + 'px) saturate(125%);',
+    '  background-color: ' + rgba(t.bg1, t.panelScrim) + ' !important;',
+    '  backdrop-filter: none !important;',
     '}',
     'pre, code, kbd { font-family: \'' + t.fontMono + '\', ui-monospace, monospace !important; }',
     'pre { font-size: ' + t.codeSize + 'px !important; }',
@@ -306,8 +313,8 @@ function themeCss(t) {
     // opaque slab, and the bottom fade stops painting over the image.
     '[data-slot=\'vertical-tabs-sidebar\'], [data-slot=\'sidebar-inbox\'],',
     '[data-slot=\'sidebar-header\'], [data-slot=\'home-panel\'] {',
-    '  background: ' + rgba(t.bg1, 0.34) + ' !important;',
-    '  backdrop-filter: blur(' + Math.round(t.backdropBlur * 0.4) + 'px) saturate(125%);',
+    '  background: ' + rgba(t.bg1, t.panelScrim) + ' !important;',
+    '  backdrop-filter: none !important;',
     '}',
     '[data-slot=\'tabs-trigger-wrapper\'], [data-slot=\'titlebar-v2\'] {',
     '  background: ' + rgba(t.bg0, 0.5) + ' !important;',
@@ -711,16 +718,18 @@ const UI_JS = String.raw`
       // Only home-panel had a scrim rule, so the other two painted the wallpaper
       // out completely. Match the shared plate shape instead of a data-slot the
       // upstream templates don't provide on two of the three.
+      // No backdrop blur: the plate covers the whole viewport, so blurring behind
+      // it only smears the wallpaper into mush. Let the image stay sharp.
       "[class*='bg-v2-background-bg-base'][class*='rounded-[10px]']{",
-      'background-color:' + rgba(t.bg1, .34) + '!important;',
-      'backdrop-filter:blur(' + Math.round(t.backdropBlur * .4) + 'px) saturate(125%);}',
+      'background-color:' + rgba(t.bg1, t.panelScrim) + '!important;',
+      'backdrop-filter:none!important;}',
       'pre,code,kbd{font-family:"' + t.fontMono + '",ui-monospace,monospace!important;}',
       'pre{font-size:' + t.codeSize + 'px!important;}',
       'pre,[data-slot="home-panel"]{border-radius:var(--cc-radius)!important;}',
       '[data-slot="vertical-tabs-sidebar"],[data-slot="sidebar-inbox"],',
       '[data-slot="sidebar-header"],[data-slot="home-panel"]{',
-      'background:' + rgba(t.bg1, .34) + '!important;',
-      'backdrop-filter:blur(' + Math.round(t.backdropBlur * .4) + 'px) saturate(125%);}',
+      'background:' + rgba(t.bg1, t.panelScrim) + '!important;',
+      'backdrop-filter:none!important;}',
       '[data-slot="tabs-trigger-wrapper"],[data-slot="titlebar-v2"]{',
       'background:' + rgba(t.bg0, .5) + '!important;',
       'backdrop-filter:blur(' + Math.round(t.backdropBlur * .45) + 'px);}',
@@ -786,7 +795,8 @@ const UI_JS = String.raw`
     root.classList.toggle('cc-reduce', !!T.reduceMotion);
     var dockEl = $('#cc-dock');
     if (dockEl) dockEl.className = 'cc-dock cc-' + T.hudPos;
-    if (T.brandTo) document.title = T.brandTo;
+    // The tab title is owned by stripTitleBrand; writing it here as well made
+    // every theme apply repaint the tab.
     renderWallpapers();
     applyPetals();
   }
@@ -853,11 +863,66 @@ const UI_JS = String.raw`
     }
 
     swapWordmarks(node);
+    hideWordmarkHost(node);
+  }
+
+  // Same rewrite, scoped to the nodes a mutation actually touched. The SPA
+  // re-renders small chips (the composer provider label) on every route change,
+  // and a debounced full-document pass left the raw name on screen for a frame
+  // or two — that gap is the blink. Observer callbacks run before paint, so
+  // rewriting here lands in the same frame the app painted.
+  function swapTouched(records) {
+    var from = T.brandFrom, to = T.brandTo;
+    if (!from || !to || from === to) return;
+    for (var i = 0; i < records.length; i++) {
+      var rec = records[i];
+      if (rec.type === 'characterData') {
+        var t = rec.target;
+        if (t.nodeValue && t.nodeValue.indexOf(from) >= 0) {
+          var pe = t.parentElement;
+          if (pe && !SKIP[pe.tagName] && !pe.closest('[data-cc-noswap]')) {
+            t.nodeValue = t.nodeValue.split(from).join(to);
+          }
+        }
+        continue;
+      }
+      for (var j = 0; j < rec.addedNodes.length; j++) {
+        var node = rec.addedNodes[j];
+        if (node.nodeType === 3) {
+          if (node.nodeValue && node.nodeValue.indexOf(from) >= 0) {
+            var p2 = node.parentElement;
+            if (p2 && !SKIP[p2.tagName] && !p2.closest('[data-cc-noswap]')) {
+              node.nodeValue = node.nodeValue.split(from).join(to);
+            }
+          }
+        } else if (node.nodeType === 1) {
+          if (node.nodeName !== 'SCRIPT' && node.nodeName !== 'STYLE') brandSwap(node);
+        }
+      }
+    }
   }
 
   // The product name is drawn as a block-font SVG, which string replacement
   // can never reach. Rather than draw a replacement word, clear the plate so
   // the space stays but reads empty, keeping the wallpaper front and center.
+  //
+  // The new-session hero is not one plate: wordmark-box stacks a flat layer, a
+  // .wordmark-shimmer layer running a mask-position keyframe, and a
+  // wordmark-lodger. Emptying each <svg> left the container and the shimmer
+  // animation alive, and the SPA rebuilds the whole tree on every navigation
+  // — that was the blink. Hide the component itself.
+  var WORDMARK_HOST = '[data-slot="wordmark-box"], [data-component="new-session-wordmark"]';
+  function hideWordmarkHost(root) {
+    if (!root || !root.querySelectorAll) return;
+    var hosts = root.querySelectorAll(WORDMARK_HOST);
+    for (var i = 0; i < hosts.length; i++) {
+      if (hosts[i].getAttribute('data-cc-hidden') === '1') continue;
+      hosts[i].setAttribute('data-cc-hidden', '1');
+      hosts[i].style.setProperty('visibility', 'hidden', 'important');
+      hosts[i].style.setProperty('animation', 'none', 'important');
+    }
+  }
+
   function isWordmarkSvg(svg) {
     var vb = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
     if (vb.length !== 4) return false;
@@ -892,11 +957,72 @@ const UI_JS = String.raw`
     swapTimer = setTimeout(function () {
       swapTimer = null;
       brandSwap(document.body);
+      hideWordmarkHost(document.body);
     }, 250);
   }
+  // Synchronous pass on the nodes the app just painted, then a slow sweep as a
+  // safety net for anything the scoped pass cannot see (attributes, svg plates).
   try {
-    new MutationObserver(scheduleSwap).observe(document.body, { childList: true, subtree: true, characterData: true });
+    new MutationObserver(function (records) {
+      swapTouched(records);
+      scheduleSwap();
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
   } catch (e) {}
+
+  /* ---------- tab title ---------- */
+
+  // The SPA's MetaProvider replaces the <title> element outright on every route
+  // change ("Greeting · OpenCode"), so a one-shot rewrite loses the race and the
+  // tab flickers the old name on each navigation. Own the title instead: strip
+  // the brand as the app writes it and never write the brand back.
+  //
+  // Only the separators the app actually uses are treated as segment breaks.
+  // Splitting on "-" would mangle session titles like "cbae's 0-0 system prompt".
+  var TITLE_SEP = /\s*[·|\u2013\u2014]\s*/;
+  function stripTitleBrand(text) {
+    var from = T.brandFrom, to = T.brandTo;
+    if (!text) return text;
+    var parts = String(text).split(TITLE_SEP);
+    var keep = [];
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      // Drop any segment that is only the brand, in either spelling, so the tab
+      // reads "Greeting" rather than "Greeting · cakecode".
+      var bare = p.trim().toLowerCase();
+      if (!bare) continue;
+      if (from && bare === String(from).toLowerCase()) continue;
+      if (to && bare === String(to).toLowerCase()) continue;
+      keep.push(p.trim());
+    }
+    return keep.join(' · ');
+  }
+
+  function applyTitle() {
+    var t = stripTitleBrand(document.title);
+    // An empty result means the title was only the brand. Write it anyway:
+    // leaving it alone is what let "OpenCode" sit in the tab.
+    if (t !== document.title) document.title = t;
+  }
+
+  function watchTitle() {
+    var titleEl = document.querySelector('title');
+    if (!titleEl) return;
+    new MutationObserver(applyTitle).observe(titleEl, { childList: true, characterData: true, subtree: true });
+  }
+
+  try {
+    new MutationObserver(function (records) {
+      for (var i = 0; i < records.length; i++) {
+        var added = records[i].addedNodes;
+        for (var j = 0; j < added.length; j++) {
+          if (added[j].nodeName === 'TITLE') watchTitle();
+          else if (added[j].nodeType === 1) hideWordmarkHost(added[j]);
+        }
+      }
+      applyTitle();
+    }).observe(document.head, { childList: true, subtree: true });
+  } catch (e) {}
+  applyTitle();
 
   /* ---------- petals ---------- */
 
@@ -1389,6 +1515,7 @@ const UI_JS = String.raw`
     sLook.appendChild(f('density', 'density', 'range', { min: 0.75, max: 1.5, step: 0.05 }));
     sLook.appendChild(f('uiScale', 'ui scale', 'range', { min: 0.8, max: 1.4, step: 0.05 }));
     sLook.appendChild(f('backdropBlur', 'panel blur', 'range', { min: 0, max: 40, step: 1 }));
+    sLook.appendChild(f('panelScrim', 'panel scrim', 'range', { min: 0, max: 0.85, step: 0.01 }));
     sLook.appendChild(f('fontSans', 'sans font', 'text'));
     sLook.appendChild(f('fontMono', 'mono font', 'text'));
     sLook.appendChild(f('codeSize', 'code size px', 'range', { min: 10, max: 22, step: 1 }));
@@ -1809,6 +1936,7 @@ const UI_JS = String.raw`
     startThinkingIndicator();
     loadWalls();
     renderThemes();
+    watchTitle();
     scheduleSwap();
     setTimeout(scheduleSwap, 400);
     setTimeout(scheduleSwap, 1200);
