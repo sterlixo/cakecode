@@ -120,7 +120,7 @@ const DEFAULTS = {
   codeSize: 13,
   letterSpacing: 0,
   // wallpaper
-  wallMode: 'gradient', // none | gradient | url | file
+  wallMode: 'gradient', // none | gradient | url | file | video
   wallUrl: '',
   wallFit: 'cover',
   wallPos: 'center',
@@ -183,7 +183,7 @@ function sanitize(theme) {
   out.reduceMotion = !!out.reduceMotion
   out.wallTile = !!out.wallTile
   out.focus = !!out.focus
-  if (['none', 'gradient', 'url', 'file'].indexOf(out.wallMode) < 0) out.wallMode = 'gradient'
+  if (['none', 'gradient', 'url', 'file', 'video'].indexOf(out.wallMode) < 0) out.wallMode = 'gradient'
   if (['cover', 'contain', 'fill', 'none'].indexOf(out.wallFit) < 0) out.wallFit = 'cover'
   if (['br', 'bl', 'tr', 'tl'].indexOf(out.hudPos) < 0) out.hudPos = 'br'
   for (const k of ['accent', 'accent2', 'bg0', 'bg1', 'bg2', 'bg3', 'textBase', 'textMuted']) {
@@ -349,9 +349,8 @@ function themeCss(t) {
 }
 
 function wallpaperCss(t) {
-  const img = t.wallMode === 'url' || t.wallMode === 'file'
-    ? (t.wallMode === 'url' ? t.wallUrl : t.wallUrl)
-    : ''
+  const isVideo = t.wallMode === 'video'
+  const img = isVideo ? '' : (t.wallMode === 'url' || t.wallMode === 'file' ? t.wallUrl : '')
   const grad = [
     'radial-gradient(38% 32% at 18% 12%, ' + rgba(t.accent, 0.20) + ', transparent 70%)',
     'radial-gradient(34% 30% at 84% 22%, ' + rgba(t.accent2, 0.18) + ', transparent 72%)',
@@ -362,15 +361,30 @@ function wallpaperCss(t) {
   const bgImage = useImg ? 'url("' + img.replace(/"/g, '\\"') + '")' : grad
   const size = useImg ? (t.wallTile ? 'auto' : t.wallFit) : 'cover'
   const repeat = useImg && t.wallTile ? 'repeat' : 'no-repeat'
+  const filter = 'blur(' + t.wallBlur + 'px) saturate(' + t.wallSat + ') brightness(' + t.wallBright + ') contrast(' + t.wallContrast + ')'
   return [
     '#cc-wall {',
     '  position: fixed; inset: -4%; z-index: -3; pointer-events: none;',
-    '  display: ' + (t.wallMode === 'none' ? 'none' : 'block') + ';',
+    '  display: ' + (t.wallMode === 'none' || isVideo ? 'none' : 'block') + ';',
     '  background-image: ' + bgImage + ';',
     '  background-size: ' + size + ';',
     '  background-position: ' + t.wallPos + ';',
     '  background-repeat: ' + repeat + ';',
-    '  filter: blur(' + t.wallBlur + 'px) saturate(' + t.wallSat + ') brightness(' + t.wallBright + ') contrast(' + t.wallContrast + ');',
+    '  filter: ' + filter + ';',
+    '  opacity: ' + t.wallOpacity + ';',
+    '  transform: translate3d(0, 0, 0);',
+    '  will-change: transform;',
+    '}',
+    // A live wallpaper is a real <video>: CSS backgrounds cannot decode video.
+    // Same box, same filter, same z-index as the still layer so every theme
+    // control (brightness, blur, vignette, parallax) keeps working unchanged.
+    '#cc-wall-video {',
+    '  position: fixed; inset: -4%; z-index: -3; pointer-events: none;',
+    '  display: ' + (isVideo ? 'block' : 'none') + ';',
+    '  width: 108%; height: 108%;',
+    '  object-fit: ' + (t.wallFit === 'contain' ? 'contain' : t.wallFit === 'fill' ? 'fill' : 'cover') + ';',
+    '  object-position: ' + t.wallPos + ';',
+    '  filter: ' + filter + ';',
     '  opacity: ' + t.wallOpacity + ';',
     '  transform: translate3d(0, 0, 0);',
     '  will-change: transform;',
@@ -382,7 +396,7 @@ function wallpaperCss(t) {
     '    radial-gradient(circle at 50% 40%, transparent 30%, ' + rgba(t.bg0, t.wallVignette) + ' 100%),',
     '    ' + rgba(t.bg0, t.wallDim) + ';',
     '}',
-    'html.cc-reduce #cc-wall { transform: none !important; }',
+    'html.cc-reduce #cc-wall, html.cc-reduce #cc-wall-video { transform: none !important; }',
   ].join('\n')
 }
 
@@ -586,6 +600,7 @@ const STRUCT_CSS = [
 
 const UI_HTML = [
   '<div id="cc-wall"></div>',
+  '<video id="cc-wall-video" muted loop playsinline preload="auto" data-cc-noswap></video>',
   '<div id="cc-wall-tint"></div>',
   '<canvas id="cc-petals"></canvas>',
   '<div id="cc-dock" class="cc-dock cc-br"></div>',
@@ -754,20 +769,29 @@ const UI_JS = String.raw`
   }
 
   function wallCss(t) {
-    var img = t.wallUrl || '';
+    var isVideo = t.wallMode === 'video';
+    var img = isVideo ? '' : (t.wallUrl || '');
     var useImg = !!img && t.wallMode !== 'none' && t.wallMode !== 'gradient';
     var grad = 'radial-gradient(38% 32% at 18% 12%,' + rgba(t.accent, .20) + ',transparent 70%),' +
       'radial-gradient(34% 30% at 84% 22%,' + rgba(t.accent2, .18) + ',transparent 72%),' +
       'radial-gradient(42% 38% at 55% 96%,' + rgba(t.accent, .14) + ',transparent 70%),' +
       'linear-gradient(160deg,' + t.bg1 + ',' + t.bg0 + ')';
     var size = useImg ? (t.wallTile ? 'auto' : t.wallFit) : 'cover';
+    var filter = 'blur(' + t.wallBlur + 'px) saturate(' + t.wallSat + ') brightness(' + t.wallBright + ') contrast(' + t.wallContrast + ')';
     return [
       '#cc-wall{position:fixed;inset:-4%;z-index:-3;pointer-events:none;',
-      'display:' + (t.wallMode === 'none' ? 'none' : 'block') + ';',
+      'display:' + (t.wallMode === 'none' || isVideo ? 'none' : 'block') + ';',
       'background-image:' + (useImg ? 'url("' + img.replace(/"/g, '\\"') + '")' : grad) + ';',
       'background-size:' + size + ';background-position:' + t.wallPos + ';',
       'background-repeat:' + (useImg && t.wallTile ? 'repeat' : 'no-repeat') + ';',
-      'filter:blur(' + t.wallBlur + 'px) saturate(' + t.wallSat + ') brightness(' + t.wallBright + ') contrast(' + t.wallContrast + ');',
+      'filter:' + filter + ';',
+      'opacity:' + t.wallOpacity + ';}',
+      '#cc-wall-video{position:fixed;inset:-4%;z-index:-3;pointer-events:none;',
+      'display:' + (isVideo ? 'block' : 'none') + ';',
+      'width:108%;height:108%;',
+      'object-fit:' + (t.wallFit === 'contain' ? 'contain' : t.wallFit === 'fill' ? 'fill' : 'cover') + ';',
+      'object-position:' + t.wallPos + ';',
+      'filter:' + filter + ';',
       'opacity:' + t.wallOpacity + ';}',
       '#cc-wall-tint{position:fixed;inset:0;z-index:-2;pointer-events:none;',
       'display:' + (t.wallMode === 'none' ? 'none' : 'block') + ';',
@@ -786,6 +810,36 @@ const UI_JS = String.raw`
     return el;
   }
 
+  // The <video> layer is not CSS: it needs a src, a decode, and a play call.
+  // Called from applyTheme so switching modes or picking a file just works.
+  function applyWallVideo() {
+    var v = $('#cc-wall-video');
+    if (!v) return;
+    // A 1080p decode is real GPU work. Skip it when the user asked for reduced
+    // motion or the tab is in the background, and let the still layer show.
+    var want = (T.wallMode === 'video' && T.wallUrl && !T.reduceMotion && !document.hidden)
+      ? T.wallUrl : '';
+    if (!want) {
+      if (!v.paused) v.pause();
+      if (!T.wallMode || T.wallMode !== 'video') {
+        if (v.getAttribute('src')) v.removeAttribute('src');
+        v.load();
+      }
+      return;
+    }
+    if (v.getAttribute('src') !== want) {
+      v.setAttribute('src', want);
+      v.load();
+    }
+    // Muted autoplay is allowed without a gesture, but a rejected promise is
+    // still possible (low power mode, energy saver); swallow it so the still
+    // layer underneath stays the visible fallback.
+    var p = v.play();
+    if (p && p.catch) p.catch(function () {});
+  }
+
+  document.addEventListener('visibilitychange', function () { applyWallVideo(); });
+
   function applyTheme() {
     styleEl('cc-vars').textContent = varsCss(T);
     styleEl('cc-wall-css').textContent = wallCss(T);
@@ -798,6 +852,7 @@ const UI_JS = String.raw`
     // The tab title is owned by stripTitleBrand; writing it here as well made
     // every theme apply repaint the tab.
     renderWallpapers();
+    applyWallVideo();
     applyPetals();
   }
 
@@ -1381,16 +1436,38 @@ const UI_JS = String.raw`
     }
     host.innerHTML = '';
     walls.forEach(function (name) {
+      var isVid = /\.(mp4|webm|m4v|mov)$/i.test(name);
+      var url = '/__cc/wall/' + encodeURIComponent(name);
       var d = document.createElement('div');
       d.className = 'cc-wallpick';
-      d.style.backgroundImage = 'url("/__cc/wall/' + encodeURIComponent(name) + '")';
       d.title = name;
+      if (isVid) {
+        // A video has no poster frame here, so let the browser paint the first
+        // frame instead of leaving an empty tile.
+        var v = document.createElement('video');
+        v.muted = true;
+        v.loop = true;
+        v.playsInline = true;
+        v.preload = 'metadata';
+        v.src = url + '#t=0.1';
+        v.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
+        d.appendChild(v);
+        var badge = document.createElement('i');
+        badge.textContent = '\u25b6 live';
+        badge.style.cssText = 'position:absolute;top:3px;left:4px;font-style:normal;font-size:8px;color:#fff;' +
+          'background:rgba(0,0,0,.55);border-radius:3px;padding:1px 3px;z-index:1';
+        d.appendChild(badge);
+        d.addEventListener('mouseenter', function () { var p = v.play(); if (p && p.catch) p.catch(function () {}); });
+        d.addEventListener('mouseleave', function () { v.pause(); v.currentTime = 0.1; });
+      } else {
+        d.style.backgroundImage = 'url("' + url + '")';
+      }
       var s = document.createElement('span');
       s.textContent = name.replace(/\.[a-z0-9]+$/i, '');
       d.appendChild(s);
       d.addEventListener('click', function () {
-        T.wallMode = 'file';
-        set('wallUrl', '/__cc/wall/' + encodeURIComponent(name));
+        T.wallMode = isVid ? 'video' : 'file';
+        set('wallUrl', url);
         toast('wallpaper: ' + name);
       });
       host.appendChild(d);
@@ -1564,7 +1641,7 @@ const UI_JS = String.raw`
     body.appendChild(sQuota);
 
     var sWall = sec('wall');
-    sWall.appendChild(f('wallMode', 'mode', 'select', { choices: ['gradient', 'none', 'file', 'url'] }));
+    sWall.appendChild(f('wallMode', 'mode', 'select', { choices: ['gradient', 'none', 'file', 'url', 'video'] }));
     sWall.appendChild(f('wallUrl', 'image url (https or /__cc/wall/x)', 'text'));
     sWall.appendChild(f('wallFit', 'fit', 'select', { choices: ['cover', 'contain', 'fill', 'none'] }));
     sWall.appendChild(f('wallPos', 'position', 'select', { choices: ['center', 'top', 'bottom', 'left', 'right', 'top left', 'top right', 'bottom left', 'bottom right'] }));
@@ -1579,15 +1656,17 @@ const UI_JS = String.raw`
     var upWrap = document.createElement('div');
     upWrap.className = 'cc-field';
     var upLab = document.createElement('label');
-    upLab.textContent = 'upload image to wallpapers/';
+    upLab.textContent = 'upload image or video to wallpapers/';
     upWrap.appendChild(upLab);
     var fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = 'image/*';
+    fileInput.accept = 'image/*,video/*';
     fileInput.addEventListener('change', function () {
       var file = fileInput.files && fileInput.files[0];
       if (!file) return;
-      if (file.size > 24 * 1024 * 1024) { toast('image too large (24MB)'); return; }
+      var isVid = /^video\//.test(file.type) || /\.(mp4|webm|m4v|mov)$/i.test(file.name);
+      var limit = isVid ? 64 : 24;
+      if (file.size > limit * 1024 * 1024) { toast('file too large (' + limit + 'MB)'); return; }
       file.arrayBuffer().then(function (buf) {
         return fetch('/__cc/wall?name=' + encodeURIComponent(file.name), {
           method: 'POST',
@@ -1598,7 +1677,7 @@ const UI_JS = String.raw`
         if (j.error) { toast(j.error); return; }
         toast('uploaded: ' + j.name);
         loadWalls();
-        T.wallMode = 'file';
+        T.wallMode = isVid ? 'video' : 'file';
         set('wallUrl', '/__cc/wall/' + encodeURIComponent(j.name));
       }).catch(function (e) { toast('upload failed'); });
     });
@@ -1734,10 +1813,13 @@ const UI_JS = String.raw`
   /* ---------- parallax ---------- */
 
   var wallEl = $('#cc-wall');
+  var wallVid = $('#cc-wall-video');
   window.addEventListener('scroll', function () {
-    if (!T.wallParallax || !wallEl) return;
+    if (!T.wallParallax) return;
     var y = window.scrollY || document.documentElement.scrollTop || 0;
-    wallEl.style.transform = 'translate3d(0,' + (-y * T.wallParallax * 0.25) + 'px,0)';
+    var t = 'translate3d(0,' + (-y * T.wallParallax * 0.25) + 'px,0)';
+    if (wallEl) wallEl.style.transform = t;
+    if (wallVid) wallVid.style.transform = t;
   }, { passive: true });
 
   /* ---------- palette ---------- */
@@ -1760,7 +1842,7 @@ const UI_JS = String.raw`
       var cur = decodeURIComponent(String(T.wallUrl).split('/').pop() || '');
       var i = walls.indexOf(cur);
       var next = walls[(i + 1) % walls.length];
-      T.wallMode = 'file';
+      T.wallMode = /\.(mp4|webm|m4v|mov)$/i.test(next) ? 'video' : 'file';
       set('wallUrl', '/__cc/wall/' + encodeURIComponent(next));
       toast(next);
     } },
@@ -2005,6 +2087,14 @@ function buildInjection(t) {
 /* ------------------------------------------------------------------ serve */
 
 const IMAGE_EXT = /\.(png|jpe?g|webp|gif|avif|bmp|svg)$/i
+const VIDEO_EXT = /\.(mp4|webm|m4v|mov)$/i
+const WALL_EXT = /\.(png|jpe?g|webp|gif|avif|bmp|svg|mp4|webm|m4v|mov)$/i
+
+const MIME_BY_EXT = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+  gif: 'image/gif', avif: 'image/avif', bmp: 'image/bmp', svg: 'image/svg+xml',
+  mp4: 'video/mp4', webm: 'video/webm', m4v: 'video/x-m4v', mov: 'video/quicktime',
+}
 
 // Same-origin self test: loads the themed page in an iframe and reports the
 // computed values the theme is supposed to set. Open /__cc/selftest.
@@ -2072,7 +2162,7 @@ document.getElementById('f').addEventListener('load', function(){
 
 function listWallpapers() {
   try {
-    return fs.readdirSync(WALL_DIR).filter((f) => IMAGE_EXT.test(f)).sort()
+    return fs.readdirSync(WALL_DIR).filter((f) => WALL_EXT.test(f)).sort()
   } catch {
     return []
   }
@@ -2360,9 +2450,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/__cc/wall' && req.method === 'POST') {
     const name = path.basename(String(url.searchParams.get('name') || ''))
-    if (!name || !IMAGE_EXT.test(name)) return sendJson(res, 400, { error: 'name must be an image extension' })
+    if (!name || !WALL_EXT.test(name)) return sendJson(res, 400, { error: 'name must be an image or video extension' })
     try {
-      const buf = await readBody(req, 32 * 1024 * 1024)
+      const buf = await readBody(req, 64 * 1024 * 1024)
       fs.writeFileSync(path.join(WALL_DIR, name), buf)
       return sendJson(res, 200, { name, bytes: buf.length })
     } catch (err) {
@@ -2372,16 +2462,48 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/__cc/wall/') && req.method === 'GET') {
     const name = path.basename(decodeURIComponent(url.pathname.slice('/__cc/wall/'.length)))
     const file = path.join(WALL_DIR, name)
-    if (!IMAGE_EXT.test(name) || !fs.existsSync(file)) {
+    if (!WALL_EXT.test(name) || !fs.existsSync(file)) {
       res.writeHead(404)
       return res.end('not found')
     }
     const stat = fs.statSync(file)
-    res.writeHead(200, {
-      'content-type': 'image/' + (name.split('.').pop().toLowerCase().replace('jpg', 'jpeg')),
-      'content-length': stat.size,
+    const ext = name.split('.').pop().toLowerCase()
+    const type = MIME_BY_EXT[ext] || 'application/octet-stream'
+    const isVideo = VIDEO_EXT.test(name)
+    const headers = {
+      'content-type': type,
       'cache-control': 'public, max-age=3600',
-    })
+      'accept-ranges': 'bytes',
+    }
+    // A <video> element seeks by byte range. Serving the whole 17MB body with a
+    // plain 200 makes the browser buffer the entire file before the first frame,
+    // and blocks looping previews from scrubbing at all.
+    const range = req.headers.range
+    if (isVideo && range) {
+      const m = /^bytes=(\d*)-(\d*)$/.exec(String(range).trim())
+      if (m) {
+        const size = stat.size
+        let start = m[1] === '' ? NaN : parseInt(m[1], 10)
+        let end = m[2] === '' ? NaN : parseInt(m[2], 10)
+        if (Number.isNaN(start)) {
+          // "bytes=-N" means the final N bytes.
+          start = Math.max(0, size - (Number.isNaN(end) ? 0 : end))
+          end = size - 1
+        } else if (Number.isNaN(end) || end >= size) {
+          end = size - 1
+        }
+        if (start > end || start >= size) {
+          res.writeHead(416, { 'content-range': 'bytes */' + size })
+          return res.end()
+        }
+        headers['content-range'] = 'bytes ' + start + '-' + end + '/' + size
+        headers['content-length'] = end - start + 1
+        res.writeHead(206, headers)
+        return fs.createReadStream(file, { start, end }).pipe(res)
+      }
+    }
+    headers['content-length'] = stat.size
+    res.writeHead(200, headers)
     return fs.createReadStream(file).pipe(res)
   }
 
