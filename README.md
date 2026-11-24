@@ -63,12 +63,7 @@ Creates `~/.config/cakecode/`, `~/.local/share/cakecode/`, and
 ## usage
 
 ```bash
-cakecode-ui            # start proxy + open the themed UI
-cakecode-ui open       # themed pairing link
-cakecode-ui stop       # stop
-cakecode-ui status     # up / down
-
-cakecode               # isolated OpenCode instance (TUI)
+cakecode               # open and pair web ui
 ```
 
 **Hotkeys:** `⌘K` palette · `⌘⇧Y` drawer · `⌘⇧C` console · `Esc` close.
