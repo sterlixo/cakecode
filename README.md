@@ -44,7 +44,7 @@ just answer.
 
 ## install
 
-one curl, macOS:
+one curl, macOS (installs OpenCode too if missing):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sterlixo/cakecode/main/install.sh | bash
@@ -62,7 +62,7 @@ or open the themed UI:
 cakecode-ui
 ```
 
-requires OpenCode at `~/.opencode/bin/opencode`.
+cakecode is a wrapper around OpenCode, so OpenCode must be installed (`~/.opencode/bin/opencode`). The installer handles that if npm is available.
 
 ## local bin
 

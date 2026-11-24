@@ -27,7 +27,12 @@ fetch bin/cakecode-ui        "$BIN/cakecode-ui"
 chmod +x "$BIN/cakecode" "$BIN/cakecode-ui"
 
 if [ ! -x "$OPENCODE_BIN" ]; then
-  echo "warning: OpenCode not found at $OPENCODE_BIN" >&2
+  echo "OpenCode not found — installing via npm…" >&2
+  npm install -g @opencode/ai 2>/dev/null || true
+fi
+
+if [ ! -x "$OPENCODE_BIN" ]; then
+  echo "warning: OpenCode still not found at $OPENCODE_BIN" >&2
   echo "install OpenCode first, then run: cakecode" >&2
 else
   echo "installed. run: cakecode   (or cakecode-ui for the themed browser UI)"
