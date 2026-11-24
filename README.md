@@ -1,5 +1,7 @@
 # cakecode
 
+![cakecode](https://raw.githubusercontent.com/sterlixo/cakecode/main/wallpapers/goku-perfected-5120x2880-25454.jpg)
+
 free-tier coder. no quota, no noise.
 
 the couch coder. not claude. not chatgpt. not any company's assistant.
