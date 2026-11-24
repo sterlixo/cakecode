@@ -1,0 +1,8 @@
+ui.log
+*.db
+*.db-shm
+*.db-wal
+.rename-backup*/
+state/
+cache/
+.DS_Store

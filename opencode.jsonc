@@ -1,0 +1,56 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "cakecode/deepseek-v4.1-flash-free",
+  "default_agent": "cakecode",
+  "provider": {
+    "cakecode": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "cakecode",
+      "options": {
+        "baseURL": "http://127.0.0.1:8787/v1",
+        "apiKey": "local"
+      },
+      "models": {
+        "deepseek-v4.1-flash-free": {
+          "name": "DeepSeek V4.1 Flash Free",
+          "reasoning": true,
+          "interleaved": { "field": "reasoning_content" },
+          "settings": { "reasoningEffort": "medium" }
+        },
+        "hy4-flash-free": {
+          "name": "Hy4 Flash Free",
+          "reasoning": true,
+          "interleaved": { "field": "reasoning_content" },
+          "settings": { "reasoningEffort": "medium" }
+        },
+        "beam-free": {
+          "name": "Beam Free",
+          "reasoning": true,
+          "interleaved": { "field": "reasoning_content" },
+          "settings": { "reasoningEffort": "medium" }
+        },
+        "mimo-v2.6-flash-free": {
+          "name": "MiMo V2.6 Flash Free",
+          "reasoning": true,
+          "interleaved": { "field": "reasoning_content" },
+          "settings": { "reasoningEffort": "medium" }
+        },
+        "nemotron-3.5-lightning-free": {
+          "name": "Nemotron 3.5 Lightning Free",
+          "reasoning": true,
+          "interleaved": { "field": "reasoning_content" },
+          "settings": { "reasoningEffort": "medium" }
+        },
+        "big-pickle": {
+          "name": "Big Pickle",
+          "reasoning": true,
+          "interleaved": { "field": "reasoning_content" },
+          "settings": { "reasoningEffort": "medium" }
+        }
+      }
+    }
+  },
+  "providers": {
+    "opencode": { "settings": { "baseURL": "http://127.0.0.1:8787/v1" } }
+  }
+}
