@@ -43,6 +43,7 @@ just answer.
 - `theme.json` — cakecode UI theme (brand from OpenCode to cakecode)
 - `ui.mjs` — theme/customization proxy
 - `wallpapers/` — cakecode wall assets
+- `favicon/` — tab icon set, pre-rendered at 16/32/48/180/192/512 px from one sakura PNG
 
 ## install
 

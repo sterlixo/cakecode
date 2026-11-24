@@ -23,6 +23,7 @@ const HOST = process.env.CC_HOST || '127.0.0.1'
 const CONF_DIR = process.env.CC_CONF || path.join(os.homedir(), '.config', 'cakecode')
 const THEME_FILE = path.join(CONF_DIR, 'theme.json')
 const WALL_DIR = path.join(CONF_DIR, 'wallpapers')
+const FAVICON_DIR = path.join(CONF_DIR, 'favicon')
 const MAX_THEME_BYTES = 512 * 1024
 
 fs.mkdirSync(WALL_DIR, { recursive: true })
@@ -1093,8 +1094,9 @@ const UI_JS = String.raw`
 
   function applyTitle() {
     var t = stripTitleBrand(document.title);
-    // An empty result means the title was only the brand. Write it anyway:
-    // leaving it alone is what let "OpenCode" sit in the tab.
+    // The tab reads as the product name. Session titles stay in front so tabs
+    // are still distinguishable: "Greeting · cakecode", plain "cakecode" at home.
+    t = t ? t + ' · ' + T.brandTo : T.brandTo;
     if (t !== document.title) document.title = t;
   }
 
@@ -2028,12 +2030,31 @@ function brandShell(html, t) {
       (m, a, text, c) => a + text.split(from).join(to) + c)
 }
 
+// The upstream shell ships a favicon.ico with the OpenCode mark. Replace it with
+// the sakura set. Sizes are pre-generated at build time: there is no image
+// library in this process and no runtime resizing.
+const FAVICON_SIZES = [16, 32, 48, 180, 192, 512]
+
+function faviconTags() {
+  return FAVICON_SIZES.map((size) => '<link rel="icon" type="image/png" sizes="'
+    + size + 'x' + size + '" href="/__cc/favicon/' + size + '">').join('')
+    + '<link rel="apple-touch-icon" sizes="180x180" href="/__cc/favicon/180">'
+}
+
+// Upstream's own icon links would win over injected ones if left in place, so
+// strip them from the shell before injecting the sakura set.
+function stripIconLinks(html) {
+  return html.replace(/<link\b[^>]*rel=["'](?:shortcut )?icon["'][^>]*>/gi, '')
+    .replace(/<link\b[^>]*rel=["']apple-touch-icon["'][^>]*>/gi, '')
+}
+
 function buildInjection(t) {
   const initScript = buildInitScript(t)
   const head = [
     '<link rel="preconnect" href="https://fonts.googleapis.com">',
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
     '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Zen+Kaku+Gothic+New:wght@400;700&family=JetBrains+Mono:wght@400;500;600&display=swap">',
+    faviconTags(),
     '<style id="cc-vars">' + themeCss(t) + '</style>',
     '<style id="cc-wall-css">' + wallpaperCss(t) + '</style>',
     '<style id="cc-struct">' + STRUCT_CSS + '</style>',
@@ -2418,6 +2439,24 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 400, { error: String((err && err.message) || err) })
     }
   }
+  // Favicons are generated once into favicon/ (see README) and served here so
+  // the tab and the touch icon come from the same sakura asset.
+  if (url.pathname.startsWith('/__cc/favicon/') && req.method === 'GET') {
+    const size = parseInt(url.pathname.slice('/__cc/favicon/'.length), 10)
+    const file = path.join(FAVICON_DIR, 'favicon-' + size + '.png')
+    if (!FAVICON_SIZES.includes(size) || !fs.existsSync(file)) {
+      res.writeHead(404)
+      return res.end('not found')
+    }
+    const headers = {
+      'content-type': 'image/png',
+      'content-length': fs.statSync(file).size,
+      'cache-control': 'public, max-age=86400',
+    }
+    res.writeHead(200, headers)
+    return fs.createReadStream(file).pipe(res)
+  }
+
   if (url.pathname.startsWith('/__cc/wall/') && req.method === 'GET') {
     const name = path.basename(decodeURIComponent(url.pathname.slice('/__cc/wall/'.length)))
     const file = path.join(WALL_DIR, name)
@@ -2486,7 +2525,7 @@ const server = http.createServer(async (req, res) => {
     proxyRes.on('end', () => {
       const theme = readTheme()
       const inj = buildInjection(theme)
-      body = brandShell(body, theme)
+      body = stripIconLinks(brandShell(body, theme))
       if (body.includes('</head>')) body = body.replace('</head>', inj.head + '</head>')
       else body = inj.head + body
       if (body.includes('</body>')) body = body.replace('</body>', inj.body + inj.scripts + '</body>')

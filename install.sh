@@ -10,7 +10,7 @@ OPENCODE_BIN="$HOME/.opencode/bin/opencode"
 
 RAW="https://raw.githubusercontent.com/sterlixo/cakecode/main"
 
-mkdir -p "$CONF/agents" "$ROOT" "$BIN"
+mkdir -p "$CONF/agents" "$CONF/favicon" "$ROOT" "$BIN"
 
 fetch() {
   curl -fsSL "$RAW/$1" -o "$2"
@@ -23,6 +23,11 @@ fetch theme.json             "$CONF/theme.json"
 fetch ui.mjs                 "$CONF/ui.mjs"
 fetch bin/cakecode           "$BIN/cakecode"
 fetch bin/cakecode-ui        "$BIN/cakecode-ui"
+
+# Tab icon set. Pre-generated because the proxy has no image library at runtime.
+for s in 16 32 48 180 192 512; do
+  fetch "favicon/favicon-$s.png" "$CONF/favicon/favicon-$s.png"
+done
 
 chmod +x "$BIN/cakecode" "$BIN/cakecode-ui"
 
