@@ -424,32 +424,6 @@ const STRUCT_CSS = [
   '.cc-btn:hover { background: var(--cc-accent); color: #140b1c; transform: translateY(-1px); }',
   '.cc-btn.active { background: var(--cc-accent); color: #140b1c; }',
   '.cc-hud-mark { font-size: 13px; line-height: 1; }',
-  '/* ---- "Thinking..." indicator (reasoning is batched upstream, so show progress) ---- */',
-  '#cc-thinking {',
-  '  position: fixed; z-index: 100019; left: 50%; bottom: 84px;',
-  '  transform: translateX(-50%) translateY(6px);',
-  '  display: flex; align-items: center; gap: 9px;',
-  '  padding: 8px 15px 8px 13px; border-radius: 999px;',
-  '  border: 1px solid rgba(255,255,255,0.14);',
-  '  background: rgba(14,9,20,0.86); color: var(--cc-accent, #ff6f9f);',
-  '  font-family: var(--v2-font-family-sans, system-ui); font-size: 13px; font-weight: 500;',
-  '  letter-spacing: .01em; backdrop-filter: blur(14px);',
-  '  box-shadow: 0 6px 24px rgba(0,0,0,.35);',
-  '  opacity: 0; pointer-events: none;',
-  '  transition: opacity .28s ease, transform .28s ease;',
-  '}',
-  '#cc-thinking.show { opacity: 1; transform: translateX(-50%) translateY(0); }',
-  '#cc-thinking .cc-think-dot {',
-  '  width: 7px; height: 7px; border-radius: 50%; background: var(--cc-accent, #ff6f9f);',
-  '  box-shadow: 0 0 0 0 var(--cc-accent, #ff6f9f);',
-  '  animation: cc-think-pulse 1.1s ease-out infinite;',
-  '}',
-  '@keyframes cc-think-pulse {',
-  '  0% { box-shadow: 0 0 0 0 rgba(255,111,159,.55); }',
-  '  70% { box-shadow: 0 0 0 8px rgba(255,111,159,0); }',
-  '  100% { box-shadow: 0 0 0 0 rgba(255,111,159,0); }',
-  '}',
-  '#cc-thinking .cc-think-label { color: var(--v2-text-text-base, #e8e8ef); }',
   '.cc-drawer {',
   '  position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 92vw;',
   '  z-index: 100050; display: flex; flex-direction: column;',
@@ -609,7 +583,6 @@ const UI_HTML = [
   '<canvas id="cc-petals"></canvas>',
   '<div id="cc-dock" class="cc-dock cc-br"></div>',
   '<div id="cc-toast" class="cc-toast"></div>',
-  '<div id="cc-thinking"><span class="cc-think-dot"></span><span class="cc-think-label">Thinking\u2026</span></div>',
   '<div id="cc-console" class="cc-console">',
   '  <div class="cc-chead">',
   '    <span class="cc-hud-mark">\u25a4</span>',
@@ -1989,87 +1962,6 @@ const UI_JS = String.raw`
 
   /* ---------- boot ---------- */
 
-  // ---- "Thinking..." indicator -------------------------------- ----------
-  // The free-tier upstream batches reasoning into one delta at completion, so
-  // the UI never shows live thinking. We listen to opencode's SSE event stream
-  // and surface a lightweight progress pill while the model is working.
-  var thinkEl = null, thinkES = null, thinkHideT = null;
-  var thinkActive = false;
-
-  function currentSessionId() {
-    // URL shapes: /session/<id> or /server/<b64>/session/<id>
-    var m = location.pathname.match(/\/session\/([^/?#]+)/);
-    return m ? m[1] : null;
-  }
-
-  function showThinking() {
-    if (!thinkEl) return;
-    thinkActive = true;
-    if (thinkHideT) { clearTimeout(thinkHideT); thinkHideT = null; }
-    thinkEl.classList.add('show');
-  }
-
-  function hideThinking(delay) {
-    if (!thinkEl || !thinkActive) return;
-    thinkActive = false;
-    if (thinkHideT) clearTimeout(thinkHideT);
-    var apply = function () { thinkEl.classList.remove('show'); thinkHideT = null; };
-    if (delay) thinkHideT = setTimeout(apply, delay);
-    else apply();
-  }
-
-  function startThinkingIndicator() {
-    thinkEl = document.getElementById('cc-thinking');
-    if (!thinkEl || typeof EventSource === 'undefined') return;
-
-    // Reconnect the SSE stream if it drops; EventSource auto-reconnects, but
-    // we also re-evaluate the active session on each navigation.
-    try { thinkES = new EventSource('/api/event'); } catch (e) { return; }
-
-    thinkES.onmessage = function (msg) {
-      var e;
-      try { e = JSON.parse(msg.data); } catch (err) { return; }
-      if (!e || !e.type) return;
-      var sid = e.data && e.data.sessionID;
-      // Ignore events for other sessions (sidebar sessions can stream too).
-      var cur = currentSessionId();
-      if (cur && sid && sid !== cur) return;
-
-      switch (e.type) {
-        case 'session.step.started':
-        case 'session.reasoning.started':
-        case 'session.step.first-token':
-          showThinking();
-          break;
-        case 'session.text.delta':
-        case 'session.text.started':
-          // First answer token means the think phase is over.
-          hideThinking(120);
-          break;
-        case 'session.reasoning.ended':
-        case 'session.step.ended':
-        case 'session.step.streamed':
-          hideThinking(300);
-          break;
-        case 'session.error':
-        case 'session.execution.failed':
-          hideThinking(0);
-          break;
-        default:
-          break;
-      }
-    };
-
-    // If the user navigates while a pill is visible, re-sync on next event.
-    window.addEventListener('popstate', function () {
-      if (!thinkActive) return;
-      // Keep showing only if we're still on a session route.
-      if (!currentSessionId()) hideThinking(0);
-    });
-  }
-
-  /* ---------- boot ---------- */
-
   function reloadTheme() {
     fetch('/__cc/theme', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
       T = Object.assign({}, D, j || {});
@@ -2081,7 +1973,6 @@ const UI_JS = String.raw`
   function boot() {
     applyTheme();
     buildPanel();
-    startThinkingIndicator();
     loadWalls();
     renderThemes();
     watchTitle();
@@ -2097,7 +1988,9 @@ const UI_JS = String.raw`
     pollQuota();
     setInterval(pollQuota, 6000);
     if (consoleEl.classList.contains('open')) connectEvents();
-    toast('ui ready \u00b7 ctrl/cmd+shift+y / +c');
+    // No boot toast: it fired on every navigation and covered the session
+    // content. The shortcut reminder stays available in the palette.
+    window.__ccReady = true;
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
