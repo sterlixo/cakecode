@@ -44,6 +44,7 @@ just answer.
 - `ui.mjs` — theme/customization proxy
 - `wallpapers/` — cakecode wall assets
 - `favicon/` — tab icon set, pre-rendered at 16/32/48/180/192/512 px from one sakura PNG
+- `docs/ARCHITECTURE.md` — process topology, request lifecycle, known gaps
 
 ## install
 
