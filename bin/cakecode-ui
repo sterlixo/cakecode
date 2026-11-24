@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# cakecode-ui — start the theme/customization proxy and open it.
+#   cakecode-ui            start (or restart) and open the browser
+#   cakecode-ui --no-open  start only
+#   cakecode-ui stop       stop it (boots the launchd job out)
+#   cakecode-ui status     show state
+set -euo pipefail
+DIR="$HOME/.config/cakecode"
+LOG="$DIR/ui.log"
+PORT="${CC_PORT:-49778}"
+TARGET="${CC_TARGET:-http://127.0.0.1:49777}"
+LABEL="ai.cakecode.ui"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+NODE="$(command -v node || echo /opt/homebrew/bin/node)"
+
+up() {
+  curl -fsS --max-time 2 "http://127.0.0.1:$PORT/__cc/theme" >/dev/null 2>&1
+}
+
+start() {
+  if up; then
+    echo "already up: http://127.0.0.1:$PORT"
+    return 0
+  fi
+  if ! curl -fsS --max-time 3 "$TARGET/" >/dev/null 2>&1; then
+    echo "cakecode server not up on $TARGET — starting it"
+    "$HOME/.local/bin/cakecode" service start >/dev/null 2>&1 || true
+    sleep 2
+  fi
+  if command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || true
+    launchctl kickstart -k "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  fi
+  for _ in $(seq 1 40); do up && break; sleep 0.25; done
+  if up; then
+    echo "cakecode ui: http://127.0.0.1:$PORT  (target $TARGET)"
+  else
+    echo "failed to start; last log:" >&2
+    tail -5 "$LOG" >&2 || true
+    return 1
+  fi
+}
+
+case "${1:-start}" in
+  stop)
+    launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    pkill -f "ui.mjs" 2>/dev/null || true
+    echo stopped ;;
+  status)
+    if up; then echo "up   http://127.0.0.1:$PORT"; else echo "down"; fi ;;
+  open|pair)
+    link="$("$HOME/.local/bin/cakecode" pair 2>/dev/null | grep -o 'http://[^ ]*auth/connect/[A-Za-z0-9_-]*' | head -1)"
+    if [ -z "$link" ]; then
+      echo "could not get a pairing link; is the server up?" >&2
+      exit 1
+    fi
+    themed="$(printf '%s' "$link" | sed "s#127.0.0.1:[0-9]*#127.0.0.1:$PORT#")"
+    echo "$themed"
+    open "$themed" 2>/dev/null || true ;;
+  --no-open|start-only)
+    start ;;
+  start|"")
+    start
+    link="$("$0" pair 2>/dev/null | head -1)"
+    if [ -n "$link" ]; then open "$link" 2>/dev/null || true
+    else open "http://127.0.0.1:$PORT/#ui" 2>/dev/null || true; fi ;;
+  *) echo "usage: cakecode-ui [start|open|stop|status|--no-open]" ;;
+esac

@@ -42,6 +42,46 @@ just answer.
 - `ui.mjs` — theme/customization proxy
 - `wallpapers/` — cakecode wall assets
 
+## install
+
+one curl, macOS:
+
+```bash
+mkdir -p ~/.local/bin ~/.config/cakecode/agents ~/.local/share/cakecode
+
+curl -fsSL https://raw.githubusercontent.com/sterlixo/cakecode/main/agents/cakecode.md \
+  -o ~/.config/cakecode/agents/cakecode.md
+curl -fsSL https://raw.githubusercontent.com/sterlixo/cakecode/main/opencode.jsonc \
+  -o ~/.config/cakecode/opencode.jsonc
+curl -fsSL https://raw.githubusercontent.com/sterlixo/cakecode/main/service.json \
+  -o ~/.config/cakecode/service.json
+curl -fsSL https://raw.githubusercontent.com/sterlixo/cakecode/main/theme.json \
+  -o ~/.config/cakecode/theme.json
+curl -fsSL https://raw.githubusercontent.com/sterlixo/cakecode/main/ui.mjs \
+  -o ~/.config/cakecode/ui.mjs
+
+curl -fsSL https://raw.githubusercontent.com/sterlixo/cakecode/main/bin/cakecode \
+  -o ~/.local/bin/cakecode
+curl -fsSL https://raw.githubusercontent.com/sterlixo/cakecode/main/bin/cakecode-ui \
+  -o ~/.local/bin/cakecode-ui
+
+chmod +x ~/.local/bin/cakecode ~/.local/bin/cakecode-ui
+```
+
+then:
+
+```
+cakecode
+```
+
+or open the themed UI:
+
+```
+cakecode-ui
+```
+
+requires OpenCode at `~/.opencode/bin/opencode`.
+
 ## local bin
 
 `~/.local/bin/cakecode` — isolated OpenCode instance routed through the local zen relay.

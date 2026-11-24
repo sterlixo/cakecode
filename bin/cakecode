@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# cakecode — isolated opencode instance routed through the local zen relay.
+# Own config dir, own DB, own state/cache, own background service port.
+set -euo pipefail
+ROOT="$HOME/.local/share/cakecode"
+CONF="$HOME/.config/cakecode"
+BIN="$HOME/.opencode/bin/opencode"
+mkdir -p "$ROOT" "$CONF"
+export OPENCODE_CONFIG_DIR="$CONF"
+export OPENCODE_DB="$ROOT/cakecode.db"
+export XDG_DATA_HOME="$ROOT"
+export XDG_STATE_HOME="$ROOT/state"
+export XDG_CACHE_HOME="$ROOT/cache"
+export OPENCODE_DISABLE_AUTOUPDATE=1
+exec "$BIN" "$@"
